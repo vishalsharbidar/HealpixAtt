@@ -66,8 +66,8 @@ class SphericalMatching(nn.Module):
         mid_encoder = [254]
         self.keypoint_encoder = KeypointEncoder(self.config['descriptor_dim'], mid_encoder )
         self.healpix_hierarchy = HealpixHierarchy(in_channels=self.config['descriptor_dim'], out_channels=self.config['output_dim'], K=2, aggr='mean', config=self.config)
-        self.attention = Attention(self.config['output_dim'], self.config['GNN_layers'], self.config)
-        self.final_proj = nn.Conv1d(self.config['output_dim'], self.config['output_dim'], kernel_size=1, bias=True) 
+        self.attention = Attention(self.config['descriptor_dim'], self.config['GNN_layers'], self.config)
+        self.final_proj = nn.Conv1d(self.config['descriptor_dim'], self.config['descriptor_dim'], kernel_size=1, bias=True) 
         self.bin_score = torch.nn.Parameter(torch.tensor(0.)) 
         
         self.finding_correspondence = Finding_Correspondence(self.config)
@@ -92,7 +92,7 @@ class SphericalMatching(nn.Module):
             #exit()
 
             # SphericalGraphUNet 
-            output, hh_desc0, hh_desc1 = self.healpix_hierarchy(desc0.transpose(1,2), desc1.transpose(1,2), data) 
+            output, hh_desc0, hh_desc1 = self.healpix_hierarchy(desc0, desc1, data) 
 
         else:
             # SphericalGraphUNet 

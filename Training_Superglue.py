@@ -30,7 +30,7 @@ os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='SphericalMatching',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('--input', type=str, nargs='+', default='/netscratch/mukunda/gt_2k/',
+    parser.add_argument('--input', type=str, nargs='+', default='/netscratch/mukunda/small_data/',
         help=' Input path', metavar='')
     parser.add_argument('--nsides', nargs='+', type=float, default= [256, 128, 64, 32, 16],
         help=' Healpix nside ', metavar='')
@@ -56,7 +56,7 @@ if __name__ == '__main__':
         help=' GNN layers', metavar='') # ['self', 'cross']
     parser.add_argument('--conv', type=str, nargs='+', default='GAT', # GAT, Cheb
         help=' Model mode', metavar='') 
-    parser.add_argument('--mode', type=str, nargs='+', default='single_image', # ['train', 'test', 'single_image']
+    parser.add_argument('--mode', type=str, nargs='+', default='train', # ['train', 'test', 'single_image']
         help=' Model mode', metavar='') 
     parser.add_argument('--kpt_encoder', type=str, nargs='+', default='True',
         help=' Keypoint encoder', metavar='')
@@ -105,8 +105,8 @@ if __name__ == '__main__':
 
     # Data processing and Data loader
     dataset = MyDataset(args.knn, args.input, default_config)
-    train, test_set = random_split(dataset, [150,34])
-    train_set, val_set = random_split(train, [110,40])
+    train, test_set = random_split(dataset, [28,4])
+    train_set, val_set = random_split(train, [24,4])
 
     train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True)
     valid_loader = DataLoader(val_set, batch_size=args.batch_size, shuffle=True)
@@ -157,7 +157,7 @@ if __name__ == '__main__':
             if min_valid_loss > valid_loss:
                 print(f'\t\t\t Validation Loss Decreased({min_valid_loss:.6f}--->{valid_loss/len(valid_loader):.6f}) \t Saving The Model')
                 min_valid_loss = valid_loss/len(valid_loader)
-                torch.save(matching.state_dict(), 'HealpixGlue-transfer_learning/saved_model/'+str(folder)+'/best_model_parameters.pth') # official recommended
+                torch.save(matching.state_dict(), 'HealpixAtt/saved_model/'+str(folder)+'/best_model_parameters.pth') # official recommended
             
             # log the running loss
             writer.add_scalar('loss/training', total_loss/len(train_loader), i)
@@ -176,7 +176,7 @@ if __name__ == '__main__':
                 y_pred, gt_corr, output  = matching_test(data) 
                 print('%s: %s' %(str(data['name']),torch.eq(y_pred['matches0'], gt_corr['gt_matches0'][16]).sum().item()))
 
-                output_path = 'HealpixGlue-transfer_learning/output/'+str(folder)+'/'+ str(data['name'][0]) 
+                output_path = 'HealpixAtt/output/'+str(folder)+'/'+ str(data['name'][0]) 
                 out_file = open(output_path, "w")
                 out = y_pred['matches0'].detach().tolist()
                 json.dump(out, out_file)
@@ -218,4 +218,4 @@ if __name__ == '__main__':
 # srun -K --partition=A100 --nodes=1 --ntasks=4 --cpus-per-task=2 --gpus-per-task=1 --container-mounts=/netscratch/$USER:/netscratch/$USER,/ds:/ds:ro,"`pwd`":"`pwd`" --container-image=/netscratch/mukunda/SM2.sqsh --container-workdir="`pwd`" --pty bash
 # srun -K -p RTX3090 -N1 --ntasks=1 --gpus-per-task=1 --cpus-per-gpu=2 --container-mounts=/netscratch/$USER:/netscratch/$USER,/ds:/ds:ro,"`pwd`":"`pwd`" --container-image=/netscratch/mukunda/keops.sqsh --container-workdir="`pwd`" --pty bash
 
-# python3 -s HealpixGlue-transfer_learning/Training_Superglue.py
+# python3 -s HealpixAtt/Training_Superglue.py

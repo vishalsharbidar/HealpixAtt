@@ -7,8 +7,12 @@ import healpy as hp
 import numpy as np
 import torch.nn.functional as F
 from torch_geometric.nn import ChebConv, knn_graph, GATConv
+from torch_geometric.utils import to_dense_adj
 from pooling.healpixAvgPool import HealpixAvgPool
 from torch.nn import ReLU
+from model.superglue import AttentionalPropagation
+from model.masked_SelfAttention import SelfAttentionalGNN
+from typing import List, Tuple
 
 # Does Spherical Chebyshev convolution
 class SphericalChebConv(nn.Module):
@@ -18,12 +22,13 @@ class SphericalChebConv(nn.Module):
         self.conv = GATConv(in_channels, out_channels, heads=1, aggr=aggr)
         
     def forward(self, x, position):
-        edges = knn_graph(position, k=20, flow= 'target_to_source')
-        #print('edges', x.shape, edges.shape)
-        #x = self.conv(x, edges)
-        x = self.conv(x.squeeze(), edges)
-        return x.unsqueeze(0)
+        edges = knn_graph(position, k=80, flow= 'target_to_source')
+        x = self.conv(x, edges)
+        return x
 
+def knn(position):
+    edges = knn_graph(position.squeeze(0), k=80, flow= 'target_to_source')
+    return edges
 
 # Does Spherical Pooling using HealpixAvgPool
 class SphericalPooling(nn.AvgPool1d):
@@ -42,37 +47,44 @@ class HealpixHierarchy(nn.Module):
     def __init__(self, in_channels, out_channels, K, aggr, config):
         super(HealpixHierarchy, self).__init__()
         self.config = config
-        self.conv1 = SphericalChebConv(in_channels, 256, K=K, aggr=aggr) # 256
-        self.conv2 = SphericalChebConv(256, 256, K=K, aggr=aggr) # 128
-        self.conv3 = SphericalChebConv(256, 512, K=K, aggr=aggr) # 64
-        self.conv4 = SphericalChebConv(512, out_channels, K=K, aggr=aggr) # 32
-        #self.conv5 = SphericalChebConv(1024, out_channels, K=K, aggr=aggr)
+        self.conv1 = SelfAttentionalGNN(feature_dim=in_channels, layer_names=['self'])
+        self.conv2 = SelfAttentionalGNN(feature_dim=in_channels, layer_names=['self'])
+        self.conv3 = SelfAttentionalGNN(feature_dim=in_channels, layer_names=['self'])
+        self.conv4 = SelfAttentionalGNN(feature_dim=in_channels, layer_names=['self'])
+
         self.pool = SphericalPooling(self.config)
         
     def forward(self, x0, x1, data): #Nside, facets_label, descriptor
         output_ = {}
         x0_ = {}
         x1_ = {}
-        #print(x0.shape, data['keypointCoords0'].squeeze(0).shape)
+        
+        #print(x0.shape, data['edges1'].shape, x1.shape, data['edges2'].shape)
         #exit()
-        x0 = self.conv1(x0, data['keypointCoords0'].squeeze(0)) 
-        x1 = self.conv1(x1, data['keypointCoords1'].squeeze(0))
-        NSIDE = self.config['nsides'][0]
-        output_[NSIDE], x0_[NSIDE], x1_[NSIDE]  = self.pool(NSIDE, x0, x1, data)
-                
-        x0 = self.conv2(x0_[NSIDE], output_[NSIDE]['img0_parent_position'].squeeze(0))
-        x1 = self.conv2(x1_[NSIDE], output_[NSIDE]['img1_parent_position'].squeeze(0))
-        NSIDE = self.config['nsides'][1]
-        output_[NSIDE], x0_[NSIDE], x1_[NSIDE]  = self.pool(NSIDE, x0, x1, output_[NSIDE*2])
-        
-        x0 = self.conv3(x0_[NSIDE], output_[NSIDE]['img0_parent_position'].squeeze(0))
-        x1 = self.conv3(x1_[NSIDE], output_[NSIDE]['img1_parent_position'].squeeze(0))
-        NSIDE = self.config['nsides'][2]
-        output_[NSIDE], x0_[NSIDE], x1_[NSIDE]  = self.pool(NSIDE, x0, x1, output_[NSIDE*2])
 
-        x0 = self.conv4(x0_[NSIDE], output_[NSIDE]['img0_parent_position'].squeeze(0))
-        x1 = self.conv4(x1_[NSIDE], output_[NSIDE]['img1_parent_position'].squeeze(0))
-        NSIDE = self.config['nsides'][3]
-        output_[NSIDE], x0_[NSIDE], x1_[NSIDE]  = self.pool(NSIDE, x0, x1, output_[NSIDE*2])
+        x0, x1 = self.conv1(x0, data['edges1'].squeeze(), x1, data['edges2'].squeeze())
+        NSIDE = self.config['nsides'][0]
+        output_[NSIDE], x0_[NSIDE], x1_[NSIDE]  = self.pool(NSIDE, x0.transpose(2,1), x1.transpose(2,1), data)
+        #print(NSIDE, x0_[NSIDE].shape,  x1_[NSIDE].shape, output_[NSIDE]['img0_parent_position'].shape)
         
+        edges0, edges1 = knn(output_[NSIDE]['img0_parent_position']), knn(output_[NSIDE]['img1_parent_position'])     
+        x0, x1 = self.conv2(x0_[NSIDE].transpose(2,1), edges0, x1_[NSIDE].transpose(2,1), edges1)
+        NSIDE = self.config['nsides'][1]
+        output_[NSIDE], x0_[NSIDE], x1_[NSIDE]  = self.pool(NSIDE, x0.transpose(2,1), x1.transpose(2,1), output_[NSIDE*2])
+        #print(NSIDE, x0_[NSIDE].shape,  x1_[NSIDE].shape, output_[NSIDE]['img0_parent_position'].shape)
+        
+        edges0, edges1 = knn(output_[NSIDE]['img0_parent_position']), knn(output_[NSIDE]['img1_parent_position'])     
+        x0, x1 = self.conv3(x0_[NSIDE].transpose(2,1), edges0, x1_[NSIDE].transpose(2,1), edges1)
+        NSIDE = self.config['nsides'][2]
+        output_[NSIDE], x0_[NSIDE], x1_[NSIDE]  = self.pool(NSIDE, x0.transpose(2,1), x1.transpose(2,1), output_[NSIDE*2])
+        #print(NSIDE, x0_[NSIDE].shape,  x1_[NSIDE].shape, output_[NSIDE]['img0_parent_position'].shape)
+
+
+        edges0, edges1 = knn(output_[NSIDE]['img0_parent_position']), knn(output_[NSIDE]['img1_parent_position'])     
+        x0, x1 = self.conv4(x0_[NSIDE].transpose(2,1), edges0, x1_[NSIDE].transpose(2,1), edges1)
+        NSIDE = self.config['nsides'][3]
+        output_[NSIDE], x0_[NSIDE], x1_[NSIDE]  = self.pool(NSIDE, x0.transpose(2,1), x1.transpose(2,1), output_[NSIDE*2])
+        #print(NSIDE, x0_[NSIDE].shape,  x1_[NSIDE].shape, output_[NSIDE]['img0_parent_position'].shape)
+        #exit()
+
         return output_, x0_, x1_
