@@ -47,10 +47,10 @@ class HealpixHierarchy(nn.Module):
     def __init__(self, in_channels, out_channels, K, aggr, config):
         super(HealpixHierarchy, self).__init__()
         self.config = config
-        self.conv1 = SelfAttentionalGNN(feature_dim=in_channels, layer_names=['self'])
-        self.conv2 = SelfAttentionalGNN(feature_dim=in_channels, layer_names=['self'])
-        self.conv3 = SelfAttentionalGNN(feature_dim=in_channels, layer_names=['self'])
-        self.conv4 = SelfAttentionalGNN(feature_dim=in_channels, layer_names=['self'])
+        self.attn1 = SelfAttentionalGNN(feature_dim=in_channels, layer_names=['self'])
+        self.attn2 = SelfAttentionalGNN(feature_dim=in_channels, layer_names=['self'])
+        self.attn3 = SelfAttentionalGNN(feature_dim=in_channels, layer_names=['self'])
+        self.attn4 = SelfAttentionalGNN(feature_dim=in_channels, layer_names=['self'])
 
         self.pool = SphericalPooling(self.config)
         
@@ -62,26 +62,27 @@ class HealpixHierarchy(nn.Module):
         #print(x0.shape, data['edges1'].shape, x1.shape, data['edges2'].shape)
         #exit()
 
-        x0, x1 = self.conv1(x0, data['edges1'].squeeze(), x1, data['edges2'].squeeze())
+        x0, x1 = self.attn1(x0, data['edges1'].squeeze(), x1, data['edges2'].squeeze())
+        print('desc',x0.shape, x1.shape)
         NSIDE = self.config['nsides'][0]
         output_[NSIDE], x0_[NSIDE], x1_[NSIDE]  = self.pool(NSIDE, x0.transpose(2,1), x1.transpose(2,1), data)
-        #print(NSIDE, x0_[NSIDE].shape,  x1_[NSIDE].shape, output_[NSIDE]['img0_parent_position'].shape)
-        
+        print(NSIDE, x0_[NSIDE].shape,  x1_[NSIDE].shape, output_[NSIDE]['img0_parent_position'].shape)
+        exit()
         edges0, edges1 = knn(output_[NSIDE]['img0_parent_position']), knn(output_[NSIDE]['img1_parent_position'])     
-        x0, x1 = self.conv2(x0_[NSIDE].transpose(2,1), edges0, x1_[NSIDE].transpose(2,1), edges1)
+        x0, x1 = self.attn2(x0_[NSIDE].transpose(2,1), edges0, x1_[NSIDE].transpose(2,1), edges1)
         NSIDE = self.config['nsides'][1]
         output_[NSIDE], x0_[NSIDE], x1_[NSIDE]  = self.pool(NSIDE, x0.transpose(2,1), x1.transpose(2,1), output_[NSIDE*2])
         #print(NSIDE, x0_[NSIDE].shape,  x1_[NSIDE].shape, output_[NSIDE]['img0_parent_position'].shape)
         
         edges0, edges1 = knn(output_[NSIDE]['img0_parent_position']), knn(output_[NSIDE]['img1_parent_position'])     
-        x0, x1 = self.conv3(x0_[NSIDE].transpose(2,1), edges0, x1_[NSIDE].transpose(2,1), edges1)
+        x0, x1 = self.attn3(x0_[NSIDE].transpose(2,1), edges0, x1_[NSIDE].transpose(2,1), edges1)
         NSIDE = self.config['nsides'][2]
         output_[NSIDE], x0_[NSIDE], x1_[NSIDE]  = self.pool(NSIDE, x0.transpose(2,1), x1.transpose(2,1), output_[NSIDE*2])
         #print(NSIDE, x0_[NSIDE].shape,  x1_[NSIDE].shape, output_[NSIDE]['img0_parent_position'].shape)
 
 
         edges0, edges1 = knn(output_[NSIDE]['img0_parent_position']), knn(output_[NSIDE]['img1_parent_position'])     
-        x0, x1 = self.conv4(x0_[NSIDE].transpose(2,1), edges0, x1_[NSIDE].transpose(2,1), edges1)
+        x0, x1 = self.attn4(x0_[NSIDE].transpose(2,1), edges0, x1_[NSIDE].transpose(2,1), edges1)
         NSIDE = self.config['nsides'][3]
         output_[NSIDE], x0_[NSIDE], x1_[NSIDE]  = self.pool(NSIDE, x0.transpose(2,1), x1.transpose(2,1), output_[NSIDE*2])
         #print(NSIDE, x0_[NSIDE].shape,  x1_[NSIDE].shape, output_[NSIDE]['img0_parent_position'].shape)

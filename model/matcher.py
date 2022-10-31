@@ -83,7 +83,7 @@ class SphericalMatching(nn.Module):
         
     # change from 1->0, 2->1
     def forward(self, data):
-
+        print(data['keypointCoords0'].shape, data['keypointCoords1'].shape)
         if self.config['kpt_encoder'] == 'True': 
             # Keypoint MLP encoder.
             desc0 = self.keypoint_encoder(data['keypointDescriptors0'], data['keypointCoords0'], data['keypointScores0']) 

@@ -24,13 +24,12 @@ from utils.FacetsMapping import HealpyFacetsMappingDict
 import healpy as hp
 from torch.utils.tensorboard import SummaryWriter
 
-
 os.environ['CUDA_LAUNCH_BLOCKING'] = '1' 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='SphericalMatching',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('--input', type=str, nargs='+', default='/netscratch/mukunda/small_data/',
+    parser.add_argument('--input', type=str, nargs='+', default='/netscratch/mukunda/npzdata150/data/',
         help=' Input path', metavar='')
     parser.add_argument('--nsides', nargs='+', type=float, default= [256, 128, 64, 32, 16],
         help=' Healpix nside ', metavar='')
@@ -44,11 +43,11 @@ if __name__ == '__main__':
         help=' K nearest neighbour for creating edges', metavar='')
     parser.add_argument('--K', type=int, default=2,
         help=' Chebyshev filter size K', metavar='')
-    parser.add_argument('--epoch', type=int, default=450,
+    parser.add_argument('--epoch', type=int, default=500,
         help=' Number of epochs', metavar='')
     parser.add_argument('--descriptor_dim', type=int, default=128,
         help=' Dimension of descriptor', metavar='') # 64, 128, 256
-    parser.add_argument('--batch_size', type=int, default=1,
+    parser.add_argument('--batch_size', type=int, default=4,
         help=' Batch size of training images', metavar='')
     parser.add_argument('--sinkhorn', type=int, default=100,
         help=' Sinkhorn iterations', metavar='')
@@ -75,7 +74,7 @@ if __name__ == '__main__':
     
     folder = args.input.split('/')[-2]
     #writer = SummaryWriter('tb_path/HealpixGlue/'+str(folder)+'/')
-    writer = SummaryWriter('tb_path/HealpixGlue/max/')
+    writer = SummaryWriter('tb_path/HealpixGlue/lr001/')
 
     # Healpy Facets Mapping 
     print('Caching Healpy Facets Mapping')
@@ -105,8 +104,8 @@ if __name__ == '__main__':
 
     # Data processing and Data loader
     dataset = MyDataset(args.knn, args.input, default_config)
-    train, test_set = random_split(dataset, [28,4])
-    train_set, val_set = random_split(train, [24,4])
+    train, test_set = random_split(dataset, [132,20])
+    train_set, val_set = random_split(train, [112,20])
 
     train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True)
     valid_loader = DataLoader(val_set, batch_size=args.batch_size, shuffle=True)
@@ -117,27 +116,31 @@ if __name__ == '__main__':
         # Loading the model
         matching = SphericalMatching(default_config).to(device)
         # Optimizers
-        optimizer = optim.Adam(matching.parameters(), lr=0.00001*args.batch_size) 
-        scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=[150], gamma=0.1)
+        optimizer = optim.Adam(matching.parameters(), lr=0.0001*args.batch_size, weight_decay=1e-5) 
+        scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=[40], gamma=0.1)
         # Training the model
         print('Training begins')
         min_valid_loss = float('inf')
         total_loss = 0  
+        gradient_accumulations = 16
         for i in range(args.epoch):  
             # Training
             total_loss = 0  
             t1 = time.time()
-            for data, y_true in train_loader:
+            for data_idx, data_ in enumerate(train_loader):
+                data, y_true = data_
                 optimizer.zero_grad(set_to_none=True)
                 # Forward pass
                 y_pred, gt_corr, output = matching(data)  
                 t2 = time.time()
                 # Calculate gradients
-                y_pred['total_loss'].backward()
+                (y_pred['total_loss'] / gradient_accumulations).backward()
                 #scaled_loss.backward()
                 t3 = time.time()
                 # Update Weights
-                optimizer.step()
+                if (data_idx + 1) % gradient_accumulations == 0:
+                    optimizer.step()
+                    matching.zero_grad()
                 t4 = time.time()
                 total_loss += y_pred['total_loss']/args.batch_size # epoch_loss/len(train_loader)
 
@@ -150,11 +153,11 @@ if __name__ == '__main__':
                 # Calculate Loss
                 valid_loss += y_pred['total_loss']/args.batch_size
 
-            scheduler.step()
+            #scheduler.step()
 
             print(f'\nEpoch {i+1} \t\t Training Loss: {total_loss / len(train_loader)} \t\t Validation Loss: {valid_loss / len(valid_loader)}')
             # Saving the best model
-            if min_valid_loss > valid_loss:
+            if min_valid_loss > valid_loss/len(valid_loader):
                 print(f'\t\t\t Validation Loss Decreased({min_valid_loss:.6f}--->{valid_loss/len(valid_loader):.6f}) \t Saving The Model')
                 min_valid_loss = valid_loss/len(valid_loader)
                 torch.save(matching.state_dict(), 'HealpixAtt/saved_model/'+str(folder)+'/best_model_parameters.pth') # official recommended
@@ -190,7 +193,7 @@ if __name__ == '__main__':
         #print(matching)
         #exit()
         # Optimizers
-        optimizer = optim.Adam(matching.parameters(), lr=0.001*args.batch_size) 
+        optimizer = optim.Adam(matching.parameters(), lr=0.0001*args.batch_size) 
         scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=[260], gamma=0.1)
         # Training the model
         print('Training begins')
@@ -211,7 +214,7 @@ if __name__ == '__main__':
             loss = y_pred['total_loss']
             scheduler.step()
             print(f'\nEpoch {i+1} \t\t Training Loss: {loss}')
-            writer.add_scalar('loss/training', loss, i)
+            writer.add_scalar('Single_img_loss/training', loss, i)
             print('%s matches out of %s' %(torch.eq(y_pred['matches0'], gt_corr['gt_matches0'][16]).sum().item(), gt_corr['gt_matches0'][16].shape[1]))
 #-------------------------------------------- End --------------------------------------------#
 

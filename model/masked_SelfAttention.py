@@ -21,14 +21,27 @@ def MLP(channels: List[int], do_bn: bool = True) -> nn.Module:
             layers.append(nn.ReLU())
     return nn.Sequential(*layers)
 
+def find_exp_mask(edges, head, scores):
+    print(edges.shape, len(edges.shape))
+    if len(edges.shape) < 3:
+        m = to_dense_adj(edges).unsqueeze(0)
+        mask = torch.cat(([m]*head), 1)
+    else:
+        stack = torch.tensor([]).to(edges)
+        for i in edges:
+            m = to_dense_adj(i).unsqueeze(0)
+            mask = torch.cat(([m]*head), 1)
+            stack = torch.cat((stack, mask), dim=0)
+    
+    masking_scores = torch.mul(scores, mask)
+    exp_masking_scores = torch.exp(masking_scores) 
+    return exp_masking_scores
+
 def attention(query: torch.Tensor, key: torch.Tensor, value: torch.Tensor, edges: torch.Tensor) -> Tuple[torch.Tensor,torch.Tensor]:
     dim = query.shape[1]
     head = query.shape[2]
     scores = torch.einsum('bdhn,bdhm->bhnm', query, key) / dim**.5
-    m = to_dense_adj(edges).unsqueeze(0)
-    mask = torch.cat(([m]*head), 1)
-    masking_scores = torch.mul(scores, mask)
-    exp_masking_scores = torch.exp(masking_scores) 
+    exp_masking_scores = find_exp_mask(edges, head, scores)
     exp_masking_scores_sum = exp_masking_scores.sum(dim=-1)
     prob = exp_masking_scores / exp_masking_scores_sum[:,:,:,None] 
     return torch.einsum('bhnm,bdhm->bdhn', prob, value), prob

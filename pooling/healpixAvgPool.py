@@ -25,7 +25,7 @@ class HealpixAvgPool(nn.AvgPool1d):
         return parent_coord.unsqueeze(0)
 
         
-    def __preprocess_pooling(self, name, NSIDE, facets_with_kpts, data, descriptor):   
+    def __preprocess_pooling(self, name, NSIDE, facets_with_kpts, descriptor):   
         ''' This function is used to arrange the features of child facets according to the parent facets for pooling
 
             input:  facets_with_kpts, 
@@ -40,9 +40,11 @@ class HealpixAvgPool(nn.AvgPool1d):
         '''
         
         dummy = {0:0}
-        #print('p',facets_with_kpts.shape)
+        print('p',facets_with_kpts.shape)
         map_dict_child_facetlabel_per_keypt = {f:i for i,f in enumerate(facets_with_kpts[0].detach().cpu().numpy())}
         map_dict_child_facetlabel_per_keypt.update(dummy)
+        print(len(map_dict_child_facetlabel_per_keypt))
+        exit()
         # Finding parent facet for all the child facets
         parent_facet_idx = torch.div(facets_with_kpts[0], 4, rounding_mode='trunc')
         #Finding unique parents and elements original index
@@ -65,6 +67,7 @@ class HealpixAvgPool(nn.AvgPool1d):
         # Filling the child features 
         features_size = descriptor.shape[2]
         child_features_for_pooling = torch.zeros(uniq_parents_idx.shape[0]*4, features_size)
+        
         facet_idx = torch.tensor(list(map(map_dict_child_facetlabel_per_keypt.get, list(filtered_child_facets_for_pooling.cpu().numpy()))))
         child_features_for_pooling = descriptor[0][facet_idx]
         desc_mask = torch.stack([child_weights]*features_size,1).to(self.device)
@@ -83,14 +86,15 @@ class HealpixAvgPool(nn.AvgPool1d):
 
     def forward(self, nside, img0_descriptor, img1_descriptor, data): # , kpts_position, kpts_Scores
         # Preprocessing
-        img0_preprocess_pooling = self.__preprocess_pooling('img0_', nside, data['img0_facetsidx'], data, img0_descriptor) 
+        print('img0_facetsidx',data['img0_facetsidx'].shape)
+        img0_preprocess_pooling = self.__preprocess_pooling('img0_', nside, data['img0_facetsidx'], img0_descriptor) 
         # Pooling
         img0_child_features = img0_preprocess_pooling['img0_child_features_for_pooling'].permute(0, 2, 1)
         img0_parent_features = F.avg_pool1d(img0_child_features, self.kernel_size)
         img0_preprocess_pooling['img0_parent_features'] = img0_parent_features.permute(0, 2, 1).to(self.device)
         
         # Preprocessing
-        img1_preprocess_pooling= self.__preprocess_pooling('img1_', nside, data['img1_facetsidx'], data, img1_descriptor) # replaced img1_facets_with_kpts -> img1_facetsidx
+        img1_preprocess_pooling= self.__preprocess_pooling('img1_', nside, data['img1_facetsidx'], img1_descriptor) # replaced img1_facets_with_kpts -> img1_facetsidx
         # Pooling
         img1_child_features = img1_preprocess_pooling['img1_child_features_for_pooling'].permute(0, 2, 1)
         img1_parent_features = F.avg_pool1d(img1_child_features, self.kernel_size)

@@ -110,37 +110,18 @@ class Upscale(nn.Module):
         # Finding valid facet index for source and target images
         valid_img0_child_facets_idx = self.finding_valid_child_facets_idx_for_source_img(NSIDE, predicted_correspondence_mask, output)     
         valid_img1_child_facets_idx = self.finding_valid_child_facets_idx_for_target_img(NSIDE, correspondence, predicted_correspondence_mask, output, k=20)
-        #print(valid_img0_child_facets_idx, valid_img1_child_facets_idx)
-        #exit()
-
-        #image0_path = 'image/00000004.jpg'
-        #image1_path = 'image/00000191.jpg'
-        #keypointCoords0 = img0 #data['keypointCoords0'].squeeze().detach().cpu().numpy()
-        #keypointCoords1 = img1
-        #matches0 = out_128['facets_corr'][0].detach().cpu()
-        #plot(matches_between_two_images(image0_path, image1_path, keypointCoords0, keypointCoords1, matches0))
-        #exit()
-        
-        
         
         # Creating mask matrix
         mask_matrix = self.creating_mask_matrix_for_upscaled_scores_matrix(upscaled_scores, valid_img0_child_facets_idx, valid_img1_child_facets_idx)
         # Element wise multiplication of upscaled scores matrix with mask matrix
-        #print(upscaled_scores)
         upscaled_scores = torch.mul(upscaled_scores, mask_matrix)
-        #print(upscaled_scores)
-        #print('img0_child_descriptor', output[NSIDE]['img0_child_descriptor'].shape)
-        #exit()
 
-        #######################
+        ################ self and cross attn #####################
         desc_dim = output[NSIDE]['img0_child_descriptor'].shape[2]
         upscaled_scores = upscaled_scores / desc_dim**.5      
-        #print('upscaled_scores',upscaled_scores.shape)
-        #print(upscaled_scores)
+        
         # Run the optimal transport.
-        upscaled_scores_ot = log_optimal_transport(
-            upscaled_scores, self.bin_score, 
-            iters=20)
+        upscaled_scores_ot = log_optimal_transport(upscaled_scores, self.bin_score, iters=20)
         #print('upscaled_scores ot',upscaled_scores_ot.shape)
         #print(upscaled_scores)
         ########################
@@ -155,16 +136,6 @@ class Upscale(nn.Module):
         indices0 = torch.where(valid0, indices0, indices0.new_tensor(-1))
         
         return upscaled_scores_ot, upscaled_scores, indices0
-        
-    '''def loss(self, upscaled_scores, gt_matches0, gt_matches1):
-        input = upscaled_scores.to_sparse()
-        
-        img0_softmax = torch.sparse.softmax(input, dim=1).to_dense()
-        loss_matches0 = loss(img0_softmax, gt_matches0)
-        
-        img1_softmax = torch.sparse.softmax(input, dim=0).to_dense()
-        loss_matches1 = loss(img1_softmax.T, gt_matches1)
-        return torch.abs(loss_matches0 + loss_matches1)'''
 
     def cr_loss(self, NSIDE, upscale, gt_corr):
         y_pred = {'context_descriptors0': None,
@@ -186,16 +157,12 @@ class Upscale(nn.Module):
         upscale['mask_matrix'] = {}
         upscale['indices0'] = {16:indices0}
         loss = {}
-        #print(indices0.unique().shape)
 
         if indices0.unique().shape[0]>1:
-            #print('upscale')
             t1 = time.time()
             NSIDE = self.config['nsides'][3]
             upscale['upscaled_scores_ot'][NSIDE], upscale['upscaled_scores'][NSIDE], upscale['indices0'][NSIDE] = self.finding_upscaled_scores_and_mask_matrix_for_given_nside(NSIDE, output, indices0)
             loss[NSIDE] = self.cr_loss(NSIDE, upscale, gt_corr)
-            #print('upscale',loss[NSIDE])
-            #exit()
             return upscale, loss
         else:
             return None, None
@@ -228,5 +195,12 @@ class Upscale(nn.Module):
         
         
 
+#image0_path = 'image/00000004.jpg'
+#image1_path = 'image/00000191.jpg'
+#keypointCoords0 = img0 #data['keypointCoords0'].squeeze().detach().cpu().numpy()
+#keypointCoords1 = img1
+#matches0 = out_128['facets_corr'][0].detach().cpu()
+#plot(matches_between_two_images(image0_path, image1_path, keypointCoords0, keypointCoords1, matches0))
+#exit()
 
        

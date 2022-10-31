@@ -45,11 +45,9 @@ class HealpyFacetsMappingDict(nn.Module):
             idx2val[nside] = map_dict_all_facet_idx2val
             kdtree[nside] = self.Healpix_kdtree(nside, npix_)
             pix2vec[nside] = self.Healpix_pix2vec(nside, npix_, device)
-        return {#'val2idx':val2idx, 
-                'idx2val':idx2val, 
+        return {'idx2val':idx2val, 
                 'npix':npix, 
                 'ipix':ipix,
-                #'nested_ipix' : nested, 
                 'kdtree':kdtree, 
                 'pix2vec':pix2vec}
 
